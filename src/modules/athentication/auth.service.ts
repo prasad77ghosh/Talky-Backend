@@ -1,3 +1,4 @@
+import { generateEmailVerificationToken } from "../../common/utils/jwt.utils";
 import { IUser, User } from "../user/user.model";
 
 export class AuthService {
@@ -12,10 +13,11 @@ export class AuthService {
             password: input.password,
         });
 
-        // send verification email to user email
+        // send verification email to user email (use queue for better performance and reliability)
+        const token = generateEmailVerificationToken(user);
 
         // store verification token in redis with expiry time
-        
+
 
         return user;
     }

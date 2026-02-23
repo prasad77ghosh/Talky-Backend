@@ -1,7 +1,10 @@
 import { Schema, model, Types } from "mongoose";
 
 export interface IUser {
+    _id?: Types.ObjectId;
     phone?: string;
+    isVerified?: boolean;
+    verificationVersion?: number;
     username?: string;
     name: string;
     bio?: string;
@@ -21,6 +24,8 @@ const userSchema = new Schema<IUser>(
         username: { type: String, unique: true, sparse: true },
         name: { type: String, required: true },
         password: { type: String, required: true },
+        isVerified: { type: Boolean, default: false },
+        verificationVersion: { type: Number, default: 0 },
         bio: String,
         avatar: String,
         lastSeen: Date,
