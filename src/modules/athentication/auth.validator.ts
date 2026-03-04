@@ -31,4 +31,12 @@ export const AuthControllerValidator = {
                 return true;
             }),
     ],
+    forgotPasswordValidator: [
+        body("email")
+            .notEmpty()
+            .withMessage("email is required")
+            .bail()
+            .isEmail()
+            .withMessage("email must be valid mail"),
+    ],
 };
