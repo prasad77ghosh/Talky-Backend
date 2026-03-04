@@ -35,7 +35,7 @@ export class AuthConsumer {
                 html: `<h1>Welcome to Talky!</h1>
                        <p>Please verify your email by clicking the link below:</p>
                        <p>Verification Token: <b>${token}</b></p>
-                       <a href="http://localhost:5000/api/v1/auth/verify?token=${token}">Verify Email</a>`,
+                       <a href="http://localhost:5000/api/v1/auth/verify-mail?token=${token}">Verify Email</a>`,
             });
         } else if (otp) {
             await mailService.sendMail({

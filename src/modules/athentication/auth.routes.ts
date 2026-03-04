@@ -12,12 +12,13 @@ router.post(
 
 router.post(
     "/forgot-password",
+    AuthControllerValidator.forgotPasswordValidator,
     authController.forgotPassword
 );
 
 // Other routes will be added here
+router.get("/verify-mail", authController.verifyUser);
 // router.post("/login", AuthControllerValidator.loginValidator, authController.login);
-// router.get("/verify", authController.verifyUser);
 // router.post("/reset-password", authController.resetPassword);
 
 export default router;

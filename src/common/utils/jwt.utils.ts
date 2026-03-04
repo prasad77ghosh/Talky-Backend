@@ -11,7 +11,7 @@ export function generateEmailVerificationToken(user: IUser) {
     };
 
     return jwt.sign(payload, jwt_email_secret, {
-        expiresIn: "5m",
+        expiresIn: "15m",
     });
 }
 

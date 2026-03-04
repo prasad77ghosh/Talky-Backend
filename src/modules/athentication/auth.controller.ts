@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { fieldValidateError } from "../../common/utils/field-validator";
 import { AuthService } from "./auth.service";
 import { asyncHandler } from "../../common/utils/async-handler";
+import { AppError } from "../../common/error/app-error";
 
 class AuthController {
     private authService: AuthService;
@@ -24,7 +25,17 @@ class AuthController {
     });
 
     public verifyUser = asyncHandler(async (req: Request, res: Response) => {
-        // Verification logic here
+        const { token } = req.query;
+        if (!token || typeof token !== "string") {
+            throw new AppError("Verification token is required", 400);
+        }
+
+        await this.authService.verifyEmail(token);
+
+        res.status(200).json({
+            success: true,
+            msg: "Email verified successfully. You can now log in.",
+        });
     });
 
     public login = asyncHandler(async (req: Request, res: Response) => {

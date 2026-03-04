@@ -31,6 +31,19 @@ services:
     networks:
       - chat_network
 
+  redis_commander:
+    image: rediscommander/redis-commander:latest
+    container_name: chat_redis_gui
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:redispassword
+    depends_on:
+      - redis
+    networks:
+      - chat_network
+
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: chat_kafka

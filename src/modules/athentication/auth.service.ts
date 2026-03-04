@@ -1,5 +1,5 @@
 import { AppError } from "../../common/error/app-error";
-import { generateEmailVerificationToken } from "../../common/utils/jwt.utils";
+import { generateEmailVerificationToken, verifyEmailToken } from "../../common/utils/jwt.utils";
 import { VERIFICATION_MESSAGE } from "../../config/kafka.config";
 import { kafkaProducer } from "../../infrastructure/kafka/producer";
 import { IUser, User } from "../user/user.model";
@@ -21,10 +21,10 @@ export class AuthService {
         if (!user) throw new AppError("Failed to create user", 500);
 
         // generate email verification token
-        const token = generateEmailVerificationToken(user);
+        const token = generateEmailVerificationToken(user as IUser);
 
         // send verification email to user email (use queue for better performance and reliability)
-        await this.produceMessage(user._id.toString(), {
+        await this.produceMessage((user._id as any).toString(), {
             email: user.username,
             token,
         });
@@ -33,6 +33,36 @@ export class AuthService {
         await redisClient.set(`verify_email:${user.username}`, token, "EX", 60 * 15); // 15 minutes
 
         return user;
+    }
+
+    async verifyEmail(token: string): Promise<void> {
+        try {
+            const payload = verifyEmailToken(token);
+            const user = await User.findById(payload.sub);
+
+            if (!user) throw new AppError("User not found", 404);
+            if (user.isVerified) throw new AppError("User is already verified", 400);
+
+            // Check if token exists in Redis
+            const storedToken = await redisClient.get(`verify_email:${user.username}`);
+            if (!storedToken || storedToken !== token) {
+                throw new AppError("Invalid or expired verification token", 400);
+            }
+
+            // Update user status
+            user.isVerified = true;
+            await user.save();
+
+            // Delete token from Redis
+            await redisClient.del(`verify_email:${user.username}`);
+
+        } catch (error: any) {
+            if (error.name === "TokenExpiredError") {
+                throw new AppError("Verification link has expired", 400);
+            }
+            if (error instanceof AppError) throw error;
+            throw new AppError("Invalid verification token", 400);
+        }
     }
 
     async forgotPassword(email: string): Promise<void> {

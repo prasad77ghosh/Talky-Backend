@@ -20,7 +20,7 @@ export interface IUser {
 
 const userSchema = new Schema<IUser>(
     {
-        phone: { type: String, required: true, unique: true, index: true },
+        phone: { type: String, unique: true, index: true },
         username: { type: String, unique: true, sparse: true },
         name: { type: String, required: true },
         password: { type: String, required: true },
