@@ -1,4 +1,5 @@
 import { Schema, model, Types } from "mongoose";
+import bcrypt from "bcryptjs";
 
 export interface IUser {
     _id?: Types.ObjectId;
@@ -6,7 +7,7 @@ export interface IUser {
     isVerified?: boolean;
     verificationVersion?: number;
     username?: string;
-    name: string;
+    name?: string;
     bio?: string;
     avatar?: string;
     lastSeen?: Date;
@@ -22,8 +23,8 @@ const userSchema = new Schema<IUser>(
     {
         phone: { type: String, unique: true, index: true },
         username: { type: String, unique: true, sparse: true },
-        name: { type: String, required: true },
-        password: { type: String, required: true },
+        name: { type: String },
+        password: { type: String },
         isVerified: { type: Boolean, default: false },
         verificationVersion: { type: Number, default: 0 },
         bio: String,
@@ -41,5 +42,6 @@ const userSchema = new Schema<IUser>(
     },
     { timestamps: true },
 );
+
 
 export const User = model<IUser>("User", userSchema);

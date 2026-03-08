@@ -40,10 +40,27 @@ class AuthController {
 
     public login = asyncHandler(async (req: Request, res: Response) => {
         fieldValidateError(req);
-        // Login logic here
+        const { email, password } = req.body;
+        const result = await this.authService.loginWithEmail(email, password);
+        
+        res.status(200).json({
+            success: true,
+            msg: "Login successful.",
+            data: result,
+        });
     });
 
-    public logout = asyncHandler(async (req: Request, res: Response) => { });
+    public logout = asyncHandler(async (req: Request, res: Response) => {
+        const { userId, refreshToken } = req.body;
+        if (!userId || !refreshToken) {
+            throw new AppError("UserId and RefreshToken are required for logout", 400);
+        }
+        await this.authService.logout(userId, refreshToken);
+        res.status(200).json({
+            success: true,
+            msg: "Logged out successfully from this device.",
+        });
+    });
 
     public forgotPassword = asyncHandler(async (req: Request, res: Response) => {
         fieldValidateError(req);
@@ -56,6 +73,29 @@ class AuthController {
     });
 
     public resetPassword = asyncHandler(async (req: Request, res: Response) => { });
+
+    public loginWithPhone = asyncHandler(async (req: Request, res: Response) => {
+        fieldValidateError(req);
+        const { phone } = req.body;
+        await this.authService.loginWithPhone(phone);
+        res.status(200).json({
+            success: true,
+            msg: "OTP sent to your phone number.",
+        });
+    });
+
+    public verifyPhoneOtp = asyncHandler(async (req: Request, res: Response) => {
+        fieldValidateError(req);
+        const { phone, otp } = req.body;
+
+        const { user, accessToken, refreshToken } = await this.authService.verifyPhoneOtp(phone, otp);
+
+        res.status(200).json({
+            success: true,
+            msg: "Login successful.",
+            data: { user, accessToken, refreshToken },
+        });
+    });
 }
 
 export const authController = new AuthController();

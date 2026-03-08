@@ -4,8 +4,6 @@ import { port } from "./config";
 import { DatabaseConnection } from "./infrastructure/database/db.connection";
 import { kafkaProducer } from "./infrastructure/kafka/producer";
 import { redisConnection } from "./infrastructure/redis/redis.connection";
-import { kafkaConsumer } from "./infrastructure/kafka/consumer";
-import { AuthConsumer } from "./modules/athentication/auth.consumer";
 
 async function bootstrap() {
     try {
@@ -13,33 +11,29 @@ async function bootstrap() {
         const db = DatabaseConnection.getInstance();
         await db.connect();
 
-        // 2️⃣ Kafka Producer
+        // 2️⃣ Kafka Producer (Needed for sending events)
         await kafkaProducer.connect();
 
-        // 3️⃣ Redis
-        // Already imported at top
+        // 3️⃣ Redis (Needed for tokens/OTPs)
+        // Handled via singleton, but can explicit wait or check if needed
+        // await redisConnection.connect(); // If we add explicit connect
 
-        // 4️⃣ Kafka Consumer
-        await kafkaConsumer.connect();
-        await AuthConsumer.start();
-
-        // 5️⃣ Start Server
+        // 4️⃣ Start API Server
         const appInstance = new App();
         const app = appInstance.getServer();
         const server = http.createServer(app);
 
         server.listen(port, () => {
-            console.log(`🚀 Server running on port ${port}`);
+            console.log(`🚀 API Server running on port ${port}`);
         });
 
         const shutdown = async (signal: string) => {
-            console.log(`⚠️ ${signal} received. Shutting down gracefully...`);
+            console.log(`⚠️ ${signal} received. Shutting down API...`);
             await kafkaProducer.disconnect();
-            await kafkaConsumer.disconnect();
             await redisConnection.disconnect();
 
             server.close(() => {
-                console.log("🛑 Server closed");
+                console.log("🛑 API Server closed");
                 process.exit(0);
             });
         };
@@ -48,7 +42,7 @@ async function bootstrap() {
         process.on("SIGINT", () => shutdown("SIGINT"));
 
     } catch (error) {
-        console.error("❌ Failed to start server", error);
+        console.error("❌ Failed to start API server", error);
         process.exit(1);
     }
 }

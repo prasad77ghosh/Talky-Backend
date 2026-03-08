@@ -14,21 +14,21 @@ export class AuthConsumer {
             if (!value) return;
 
             const data = JSON.parse(value);
-            const { email, token, otp } = data;
+            const { email, phone, token, otp } = data;
 
-            console.log(`📩 Received message on topic: ${topic} for ${email}`);
+            console.log(`📩 Received message on topic: ${topic} for ${email || phone}`);
 
             try {
-                await this.processMessage(email, token, otp);
+                await this.processMessage(email, phone, token, otp);
             } catch (error) {
-                console.error(`❌ Failed to process message for ${email}, initiating retry...`, error);
-                await this.handleRetry(email, token, otp, 1);
+                console.error(`❌ Failed to process message for ${email || phone}, initiating retry...`, error);
+                await this.handleRetry(email, phone, token, otp, 1);
             }
         });
     }
 
-    private static async processMessage(email: string, token?: string, otp?: string) {
-        if (token) {
+    private static async processMessage(email?: string, phone?: string, token?: string, otp?: string) {
+        if (email && token) {
             await mailService.sendMail({
                 to: email,
                 subject: "Verify Your Email - Talky",
@@ -37,7 +37,7 @@ export class AuthConsumer {
                        <p>Verification Token: <b>${token}</b></p>
                        <a href="http://localhost:5000/api/v1/auth/verify-mail?token=${token}">Verify Email</a>`,
             });
-        } else if (otp) {
+        } else if (email && otp) {
             await mailService.sendMail({
                 to: email,
                 subject: "Your OTP for Authentication - Talky",
@@ -45,24 +45,27 @@ export class AuthConsumer {
                        <p>Your OTP for authentication is: <b>${otp}</b></p>
                        <p>This OTP will expire in 5 minutes.</p>`,
             });
+        } else if (phone && otp) {
+            // Placeholder for SMS service
+            console.log(`📱 [SMS SIMULATION] Sending OTP ${otp} to phone: ${phone}`);
         }
     }
 
-    private static async handleRetry(email: string, token: string | undefined, otp: string | undefined, attempt: number) {
+    private static async handleRetry(email: string | undefined, phone: string | undefined, token: string | undefined, otp: string | undefined, attempt: number) {
         if (attempt > this.MAX_RETRIES) {
-            console.error(`🚨 Max retries reached for ${email}. Email failed to send.`);
+            console.error(`🚨 Max retries reached for ${email || phone}. Message failed to send.`);
             return;
         }
 
-        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s, 16s, 32s
-        console.log(`⏳ Retrying attempt ${attempt} for ${email} in ${delay}ms...`);
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`⏳ Retrying attempt ${attempt} for ${email || phone} in ${delay}ms...`);
 
         setTimeout(async () => {
             try {
-                await this.processMessage(email, token, otp);
-                console.log(`✅ Successfully sent email to ${email} on attempt ${attempt}`);
+                await this.processMessage(email, phone, token, otp);
+                console.log(`✅ Successfully sent message to ${email || phone} on attempt ${attempt}`);
             } catch (error) {
-                await this.handleRetry(email, token, otp, attempt + 1);
+                await this.handleRetry(email, phone, token, otp, attempt + 1);
             }
         }, delay);
     }
