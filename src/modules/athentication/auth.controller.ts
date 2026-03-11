@@ -41,12 +41,43 @@ class AuthController {
     public login = asyncHandler(async (req: Request, res: Response) => {
         fieldValidateError(req);
         const { email, password } = req.body;
-        const result = await this.authService.loginWithEmail(email, password);
-        
+        const deviceInfo = {
+            device: req.headers["user-agent"] || "unknown",
+            ip: req.ip || req.socket.remoteAddress || "unknown",
+        };
+        const result = await this.authService.loginWithEmail(email, password, deviceInfo);
+
         res.status(200).json({
             success: true,
             msg: "Login successful.",
             data: result,
+        });
+    });
+
+    public loginWithPhone = asyncHandler(async (req: Request, res: Response) => {
+        fieldValidateError(req);
+        const { phone } = req.body;
+        await this.authService.loginWithPhone(phone);
+        res.status(200).json({
+            success: true,
+            msg: "OTP sent to your phone number.",
+        });
+    });
+
+    public verifyPhoneOtp = asyncHandler(async (req: Request, res: Response) => {
+        fieldValidateError(req);
+        const { phone, otp } = req.body;
+        const deviceInfo = {
+            device: req.headers["user-agent"] || "unknown",
+            ip: req.ip || req.socket.remoteAddress || "unknown",
+        };
+
+        const { user, accessToken, refreshToken } = await this.authService.verifyPhoneOtp(phone, otp, deviceInfo);
+
+        res.status(200).json({
+            success: true,
+            msg: "Login successful.",
+            data: { user, accessToken, refreshToken },
         });
     });
 
@@ -74,28 +105,7 @@ class AuthController {
 
     public resetPassword = asyncHandler(async (req: Request, res: Response) => { });
 
-    public loginWithPhone = asyncHandler(async (req: Request, res: Response) => {
-        fieldValidateError(req);
-        const { phone } = req.body;
-        await this.authService.loginWithPhone(phone);
-        res.status(200).json({
-            success: true,
-            msg: "OTP sent to your phone number.",
-        });
-    });
 
-    public verifyPhoneOtp = asyncHandler(async (req: Request, res: Response) => {
-        fieldValidateError(req);
-        const { phone, otp } = req.body;
-
-        const { user, accessToken, refreshToken } = await this.authService.verifyPhoneOtp(phone, otp);
-
-        res.status(200).json({
-            success: true,
-            msg: "Login successful.",
-            data: { user, accessToken, refreshToken },
-        });
-    });
 }
 
 export const authController = new AuthController();

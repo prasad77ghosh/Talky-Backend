@@ -1,30 +1,66 @@
 import { EachMessagePayload } from "kafkajs";
 import { VERIFICATION_MESSAGE } from "../../config/kafka.config";
-import { kafkaConsumer } from "../../infrastructure/kafka/consumer";
+import { KafkaConsumer } from "../../infrastructure/kafka/consumer";
 import { mailService } from "../../infrastructure/mail/mail.service";
 
 export class AuthConsumer {
-    private static MAX_RETRIES = 5;
+    private static consumer = new KafkaConsumer("auth-group");
 
     static async start() {
-        await kafkaConsumer.subscribe(VERIFICATION_MESSAGE);
+        await this.consumer.connect();
+        await this.consumer.subscribe(VERIFICATION_MESSAGE);
 
-        await kafkaConsumer.run(async ({ topic, partition, message }: EachMessagePayload) => {
+        await this.consumer.runWithRetry(async ({ topic, message }: EachMessagePayload) => {
             const value = message.value?.toString();
             if (!value) return;
 
             const data = JSON.parse(value);
             const { email, phone, token, otp } = data;
 
-            console.log(`📩 Received message on topic: ${topic} for ${email || phone}`);
+            console.log(`📩 [Main] Received message on topic: ${topic} for ${email || phone}`);
+            
+            await this.processMessage(email, phone, token, otp);
+        });
+    }
+
+    /**
+     * Starts a specialized consumer for DLQ messages.
+     * In production, this might be triggered manually or run in a separate 'recovery' worker.
+     */
+    static async startDLQ() {
+        const dlqConsumer = new KafkaConsumer("auth-dlq-group");
+        await dlqConsumer.connect();
+        await dlqConsumer.subscribe(`${VERIFICATION_MESSAGE}.dlq`);
+
+        console.log(`🛠️ [Recovery] DLQ Consumer started for ${VERIFICATION_MESSAGE}.dlq`);
+
+        await dlqConsumer.runWithRetry(async ({ message }: EachMessagePayload) => {
+            const value = message.value?.toString();
+            if (!value) return;
+
+            const dlqData = JSON.parse(value);
+            const originalPayload = dlqData.payload ? JSON.parse(dlqData.payload) : null;
+            
+            if (!originalPayload) {
+                console.error("❌ [Recovery] No original payload found in DLQ message:", dlqData);
+                return;
+            }
+
+            const { email, phone, token, otp } = originalPayload;
+            console.log(`🛠️ [Recovery] Retrying message for ${email || phone}...`);
 
             try {
                 await this.processMessage(email, phone, token, otp);
+                console.log(`✅ [Recovery] Successfully re-processed message for ${email || phone}`);
             } catch (error) {
-                console.error(`❌ Failed to process message for ${email || phone}, initiating retry...`, error);
-                await this.handleRetry(email, phone, token, otp, 1);
+                console.error(`❌ [Recovery] Re-processing failed again for ${email || phone}:`, error);
+                throw error; // Let runWithRetry handle escalation (e.g. to a .dlq.dlq topic or alert)
             }
         });
+    }
+
+    static async stop() {
+        await this.consumer.disconnect();
     }
 
     private static async processMessage(email?: string, phone?: string, token?: string, otp?: string) {
@@ -49,24 +85,5 @@ export class AuthConsumer {
             // Placeholder for SMS service
             console.log(`📱 [SMS SIMULATION] Sending OTP ${otp} to phone: ${phone}`);
         }
-    }
-
-    private static async handleRetry(email: string | undefined, phone: string | undefined, token: string | undefined, otp: string | undefined, attempt: number) {
-        if (attempt > this.MAX_RETRIES) {
-            console.error(`🚨 Max retries reached for ${email || phone}. Message failed to send.`);
-            return;
-        }
-
-        const delay = Math.pow(2, attempt) * 1000;
-        console.log(`⏳ Retrying attempt ${attempt} for ${email || phone} in ${delay}ms...`);
-
-        setTimeout(async () => {
-            try {
-                await this.processMessage(email, phone, token, otp);
-                console.log(`✅ Successfully sent message to ${email || phone} on attempt ${attempt}`);
-            } catch (error) {
-                await this.handleRetry(email, phone, token, otp, attempt + 1);
-            }
-        }, delay);
     }
 }

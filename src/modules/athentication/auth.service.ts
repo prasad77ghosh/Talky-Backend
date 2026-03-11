@@ -53,6 +53,7 @@ export class AuthService {
   async loginWithEmail(
     email: string,
     password: string,
+    deviceInfo: { device: string; ip: string },
   ): Promise<{ user: IUser; accessToken: string; refreshToken: string }> {
     const user = await User.findOne({ username: email });
 
@@ -75,8 +76,8 @@ export class AuthService {
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Enforce device limit
-    await this.trackSession(user._id!.toString(), refreshToken);
+    // Enforce device limit with device info
+    await this.trackSession(user._id!.toString(), refreshToken, deviceInfo);
 
     return { user, accessToken, refreshToken };
   }
@@ -135,6 +136,7 @@ export class AuthService {
   async verifyPhoneOtp(
     phone: string,
     otp: string,
+    deviceInfo: { device: string; ip: string },
   ): Promise<{ user: IUser; accessToken: string; refreshToken: string }> {
     const storedOtp = await redisClient.get(`otp:${phone}`);
 
@@ -153,8 +155,8 @@ export class AuthService {
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Enforce device limit
-    await this.trackSession(user._id!.toString(), refreshToken);
+    // Enforce device limit with device info
+    await this.trackSession(user._id!.toString(), refreshToken, deviceInfo);
 
     await redisClient.del(`otp:${phone}`);
 
@@ -182,22 +184,46 @@ export class AuthService {
 
   async logout(userId: string, refreshToken: string): Promise<void> {
     const key = `active_sessions:${userId}`;
+    const metaKey = `session_meta:${refreshToken}`;
     await redisClient.zrem(key, refreshToken);
+    await redisClient.del(metaKey);
   }
 
-  private async trackSession(userId: string, refreshToken: string) {
+  private async trackSession(
+    userId: string,
+    refreshToken: string,
+    deviceInfo: { device: string; ip: string },
+  ) {
     const key = `active_sessions:${userId}`;
+    const metaKey = `session_meta:${refreshToken}`;
     const now = Date.now();
 
-    // 1. Add current session with timestamp as score
+    // 1. Store device metadata
+    await redisClient.set(
+      metaKey,
+      JSON.stringify({ ...deviceInfo, loggedInAt: new Date() }),
+      "EX",
+      7 * 24 * 60 * 60, // 7 days
+    );
+
+    // 2. Add current session with timestamp as score
     await redisClient.zadd(key, now, refreshToken);
 
-    // 2. Automatically kick out oldest session(s) if limit exceeded
-    // Keeps only the most recent 2 sessions (ranks -1 and -2)
-    // Removes everything from rank 0 (oldest) up to -3
-    await redisClient.zremrangebyrank(key, 0, -3);
+    // 3. Automatically kick out oldest session(s) if limit exceeded
+    const sessionCount = await redisClient.zcard(key);
+    if (sessionCount > 2) {
+      // Get tokens about to be removed
+      const oldestTokens = await redisClient.zrange(key, 0, sessionCount - 3);
+      if (oldestTokens.length > 0) {
+        // Cleanup metadata for kicked out sessions
+        const metaKeysToRemove = oldestTokens.map((t) => `session_meta:${t}`);
+        await redisClient.del(...metaKeysToRemove);
+        // Remove from ZSET
+        await redisClient.zrem(key, ...oldestTokens);
+      }
+    }
 
-    // 3. Set expiration for the session list (7 days)
+    // 4. Set expiration for the session list (7 days)
     await redisClient.expire(key, 7 * 24 * 60 * 60);
   }
 
