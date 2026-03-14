@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { mailConfig } from "../../config/mail.config";
+import { withRetry } from "../../common/utils/retry.utils";
 
 export interface MailOptions {
     to: string;
@@ -22,16 +23,24 @@ class MailService {
 
     async sendMail(options: MailOptions): Promise<void> {
         try {
-            const info = await this.transporter.sendMail({
-                from: mailConfig.from,
-                to: options.to,
-                subject: options.subject,
-                text: options.text,
-                html: options.html,
-            });
-            console.log("📧 Email sent: %s", info.messageId);
+            await withRetry(
+                async (attempt) => {
+                    const info = await this.transporter.sendMail({
+                        from: mailConfig.from,
+                        to: options.to,
+                        subject: options.subject,
+                        text: options.text,
+                        html: options.html,
+                    });
+                    console.log("📧 Email sent: %s", info.messageId);
+                },
+                { maxRetries: 2, initialDelay: 5000 }, // Email retries usually need more initial delay
+                (error, attempt, delay) => {
+                    console.warn(`⏳ Email sending failed (attempt ${attempt}). Retrying in ${Math.round(delay)}ms...`);
+                }
+            );
         } catch (error) {
-            console.error("❌ Failed to send email:", error);
+            console.error("❌ Failed to send email after all retries:", error);
             throw error;
         }
     }

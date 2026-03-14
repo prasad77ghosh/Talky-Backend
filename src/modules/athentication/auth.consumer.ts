@@ -2,6 +2,7 @@ import { EachMessagePayload } from "kafkajs";
 import { VERIFICATION_MESSAGE } from "../../config/kafka.config";
 import { KafkaConsumer } from "../../infrastructure/kafka/consumer";
 import { mailService } from "../../infrastructure/mail/mail.service";
+import { NonRetryableError } from "../../common/utils/retry.utils";
 
 export class AuthConsumer {
     private static consumer = new KafkaConsumer("auth-group");
@@ -12,10 +13,22 @@ export class AuthConsumer {
 
         await this.consumer.runWithRetry(async ({ topic, message }: EachMessagePayload) => {
             const value = message.value?.toString();
-            if (!value) return;
+            if (!value) {
+                throw new NonRetryableError("Empty message value");
+            }
 
-            const data = JSON.parse(value);
+            let data;
+            try {
+                data = JSON.parse(value);
+            } catch (error) {
+                throw new NonRetryableError(`Invalid JSON in message: ${value}`);
+            }
+
             const { email, phone, token, otp } = data;
+
+            if (!email && !phone) {
+                throw new NonRetryableError("Message missing identifier (email or phone)");
+            }
 
             console.log(`📩 [Main] Received message on topic: ${topic} for ${email || phone}`);
             
@@ -28,35 +41,22 @@ export class AuthConsumer {
      * In production, this might be triggered manually or run in a separate 'recovery' worker.
      */
     static async startDLQ() {
-        const dlqConsumer = new KafkaConsumer("auth-dlq-group");
-        await dlqConsumer.connect();
-        await dlqConsumer.subscribe(`${VERIFICATION_MESSAGE}.dlq`);
+        await KafkaConsumer.startDLQ(
+            VERIFICATION_MESSAGE,
+            "auth-dlq-group",
+            async (payload) => {
+                const { email, phone, token, otp } = payload;
+                console.log(`🛠️ [Recovery] Retrying message for ${email || phone}...`);
 
-        console.log(`🛠️ [Recovery] DLQ Consumer started for ${VERIFICATION_MESSAGE}.dlq`);
-
-        await dlqConsumer.runWithRetry(async ({ message }: EachMessagePayload) => {
-            const value = message.value?.toString();
-            if (!value) return;
-
-            const dlqData = JSON.parse(value);
-            const originalPayload = dlqData.payload ? JSON.parse(dlqData.payload) : null;
-            
-            if (!originalPayload) {
-                console.error("❌ [Recovery] No original payload found in DLQ message:", dlqData);
-                return;
-            }
-
-            const { email, phone, token, otp } = originalPayload;
-            console.log(`🛠️ [Recovery] Retrying message for ${email || phone}...`);
-
-            try {
-                await this.processMessage(email, phone, token, otp);
-                console.log(`✅ [Recovery] Successfully re-processed message for ${email || phone}`);
-            } catch (error) {
-                console.error(`❌ [Recovery] Re-processing failed again for ${email || phone}:`, error);
-                throw error; // Let runWithRetry handle escalation (e.g. to a .dlq.dlq topic or alert)
-            }
-        });
+                try {
+                    await this.processMessage(email, phone, token, otp);
+                    console.log(`✅ [Recovery] Successfully re-processed message for ${email || phone}`);
+                } catch (error) {
+                    console.error(`❌ [Recovery] Re-processing failed again for ${email || phone}:`, error);
+                    throw error;
+                }
+            },
+        );
     }
 
     static async stop() {

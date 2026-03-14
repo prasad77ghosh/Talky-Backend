@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { DatabaseConfig } from "../../config/db.config";
+import { withRetry } from "../../common/utils/retry.utils";
 
 export class DatabaseConnection {
     private static instance: DatabaseConnection;
@@ -15,17 +16,25 @@ export class DatabaseConnection {
 
     public async connect(): Promise<void> {
         try {
-            await mongoose.connect(
-                DatabaseConfig.uri,
-                DatabaseConfig.options
+            await withRetry(
+                async (attempt) => {
+                    await mongoose.connect(
+                        DatabaseConfig.uri,
+                        DatabaseConfig.options
+                    );
+                },
+                { maxRetries: 5, initialDelay: 2000 },
+                (error, attempt, delay) => {
+                    console.warn(`⏳ MongoDB Connection attempt ${attempt} failed. Retrying in ${Math.round(delay)}ms...`);
+                }
             );
 
             this.registerEvents();
 
             console.log("✅ MongoDB Connected");
         } catch (error) {
-            console.error("❌ MongoDB Connection Failed:", error);
-            process.exit(1);
+            console.error("❌ MongoDB Connection Failed after all retries:", error);
+            throw error; // Let the caller (worker/server) handle the fatal error
         }
     }
 
